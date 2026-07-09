@@ -680,45 +680,6 @@ function AboutModal({ L, onClose }) {
 }
 
 /* ─── MAIN APP ────────────────────────────────────────────────────────────── */
-/* ─── IMAGE HELPERS ───────────────────────────────────────────────────────── */
-function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload  = () => res(r.result.split(',')[1]);
-    r.onerror = () => rej(new Error('read failed'));
-    r.readAsDataURL(file);
-  });
-}
-function buildMessages(history, pendingImg) {
-  return history.map((m, i) => {
-    if (pendingImg && i === history.length - 1 && m.role === 'user') {
-      return {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: pendingImg.type, data: pendingImg.data } },
-          { type: 'text',  text: m.content || 'I wanted to share this image with you.' }
-        ]
-      };
-    }
-    return { role: m.role, content: m.content };
-  });
-}
-
-/* ─── SPEECH SYNTHESIS ────────────────────────────────────────────────────── */
-const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
-function speakText(text, langCode) {
-  if (!synth) return;
-  synth.cancel();
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.lang = langCode || 'en-US';
-  utt.rate = 0.92;
-  utt.pitch = 1.05;
-  synth.speak(utt);
-}
-function stopSpeaking() { synth && synth.cancel(); }
-
-const LANG_BCP = {en:'en-US',ig:'ig',yo:'yo',pcm:'en-NG',fr:'fr-FR',sw:'sw-KE',es:'es-ES',pt:'pt-BR',hi:'hi-IN',ar:'ar-SA'};
-
 export default function App() {
   const [screen,    setScreen]    = useState("welcome");
   const [langKey,   setLangKey]   = useState("en");
@@ -865,26 +826,23 @@ export default function App() {
 
     try {
       const apiMessages = buildMessages(trimHistory(history), imgSnapshot);
-      const sysPrompt = makePrompt(L.name, userName, mood ? L.moodLabels[MOODS.findIndex(m=>m.id===mood.id)] : "");
-
-      // Build Gemini contents array — prepend system prompt as first user turn
-      const geminiContents = [
-        { role:"user", parts:[{ text: sysPrompt }] },
-        { role:"model", parts:[{ text: "Understood. I am Solace, ready to support." }] },
-        ...apiMessages.map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: Array.isArray(m.content)
-            ? m.content.map(c => c.type === "image"
-                ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } }
-                : { text: c.text })
-            : [{ text: m.content }]
-        }))
-      ];
-
-      const res = await fetch("/api/chat", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST", signal:ctrl.signal,
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ contents: geminiContents })
+        body:JSON.stringify({
+          contents: [
+            { role:"user", parts:[{ text: makePrompt(L.name, userName, mood ? L.moodLabels[MOODS.findIndex(m=>m.id===mood.id)] : "") }] },
+            { role:"model", parts:[{ text: "Understood. I am Solace, ready to listen." }] },
+            ...apiMessages.map(m => ({
+              role: m.role === "assistant" ? "model" : "user",
+              parts: Array.isArray(m.content)
+                ? m.content.map(c => c.type === "image"
+                    ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } }
+                    : { text: c.text })
+                : [{ text: m.content }]
+            }))
+          ]
+        })
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -905,11 +863,11 @@ export default function App() {
           if (raw==="[DONE]") continue;
           try {
             const j=JSON.parse(raw);
-            const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
+            const txt = j.candidates?.[0]?.content?.parts?.[0]?.text || j.delta?.text || "";
+            if (txt) {
               setMessages(prev=>{
                 const u=[...prev];
-                u[u.length-1]={...u[u.length-1],content:u[u.length-1].content+text};
+                u[u.length-1]={...u[u.length-1],content:u[u.length-1].content+txt};
                 return u;
               });
             }
