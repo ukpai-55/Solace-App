@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
-/* ─── LANGUAGES ─────────────────────────────────────────────────────────────*/
+/* ──import─ LANGUAGES ─────────────────────────────────────────────────────────────*/
 const LANGS = {
 en:  { name:"English",      native:"English",      dir:"ltr", flag:"🇬🇧",
   tagline:"A quiet space to talk,\nwhenever you need it.",
@@ -409,19 +409,13 @@ export default function App() {
     setLoading(true);
 
     try {
-      const geminiContents = [
-        { role: "user",  parts: [{ text: makePrompt(L.name, userName, mood ? L.moodLabels[MOODS.findIndex(m => m.id === mood.id)] : "") }] },
-        { role: "model", parts: [{ text: "Understood. I am Solace, here to listen." }] },
-        ...history.slice(-16).map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }]
-        }))
-      ];
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: geminiContents })
+        body: JSON.stringify({
+          systemPrompt: makePrompt(L.name, userName, mood ? L.moodLabels[MOODS.findIndex(m => m.id === mood.id)] : ""),
+          messages: history.slice(-10)
+        })
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
